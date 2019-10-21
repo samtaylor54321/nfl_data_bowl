@@ -1,0 +1,63 @@
+-- create directory if it doesn't exist
+DROP DATABASE IF EXISTS nfl_data_bowl;
+
+CREATE DATABASE nfl_data_bowl;
+
+-- orientate into this database
+\c nfl_data_bowl;
+
+-- create base table to have data inserted into
+CREATE TABLE nfl_data (
+  GameId text,
+  PlayId text,
+  Team text,
+  X text,
+  Y text,
+  S text,
+  A text,
+  Dis text,
+  Orientation text,
+  Dir text,
+  NflId text,
+  DisplayName text,
+  JerseyNumber text,
+  Season text,
+  YardLine text,
+  Quarter text,
+  GameClock text,
+  PossessionTeam text,
+  Down text,
+  Distance text,
+  FieldPosition text,
+  HomeScoreBeforePlay text,
+  VisitorScoreBeforePlay text,
+  NflIdRusher text,
+  OffenseFormation text,
+  OffensePersonnel text,
+  DefendersInTheBox text,
+  DefensePersonnel text,
+  PlayDirection text,
+  TimeHandoff text,
+  TimeSnap text,
+  Yards text,
+  PlayerHeight text,
+  PlayerWeight text,
+  PlayerBirthDate text,
+  PlayerCollegeName text,
+  Position text,
+  HomeTeamAbbr text,
+  VisitorTeamAbbr text,
+  Week text,
+  Stadium text,
+  Location text,
+  StadiumType text,
+  Turf text,
+  GameWeather text,
+  Temperature text,
+  Humidity text,
+  WindSpeed text,
+  WindDirection text
+) ;
+
+-- Copy data from CSV into the appropriate file
+/copy nfl_data FROM '/Users/samtaylor/Documents/Git/nfl_data_bowl/external/nfl_data.csv' CSV HEADER;
