@@ -8,29 +8,29 @@ CREATE DATABASE nfl_data_bowl;
 
 -- create base table to have data inserted into
 CREATE TABLE nfl_data (
-  GameId text,
-  PlayId text,
+  GameId float,
+  PlayId float,
   Team text,
-  X text,
-  Y text,
-  S text,
-  A text,
-  Dis text,
-  Orientation text,
-  Dir text,
-  NflId text,
+  X float,
+  Y float,
+  S float,
+  A float,
+  Dis float,
+  Orientation float,
+  Dir float,
+  NflId float,
   DisplayName text,
-  JerseyNumber text,
-  Season text,
-  YardLine text,
-  Quarter text,
+  JerseyNumber float,
+  Season float,
+  YardLine float,
+  Quarter float,
   GameClock text,
   PossessionTeam text,
-  Down text,
-  Distance text,
+  Down float,
+  Distance float,
   FieldPosition text,
-  HomeScoreBeforePlay text,
-  VisitorScoreBeforePlay text,
+  HomeScoreBeforePlay float,
+  VisitorScoreBeforePlay float,
   NflIdRusher text,
   OffenseFormation text,
   OffensePersonnel text,
@@ -60,4 +60,4 @@ CREATE TABLE nfl_data (
 ) ;
 
 -- Copy data from CSV into the appropriate file
-/copy nfl_data FROM '/Users/samtaylor/Documents/Git/nfl_data_bowl/external/nfl_data.csv' CSV HEADER;
+\copy nfl_data FROM '/Users/samtaylor/Documents/Git/nfl_data_bowl/external/train.csv' CSV HEADER;

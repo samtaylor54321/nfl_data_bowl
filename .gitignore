@@ -98,7 +98,13 @@ venv.bak/
 .ropeproject
 
 # mkdocs documentation
+
 /site
 
 # mypy
 .mypy_cache/
+
+# remove any output files
+*.out
+*.csv
+.Rproj.user
