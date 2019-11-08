@@ -4,8 +4,13 @@
 loading:
   # Specify which database and table the data is contained in
   database: 'nfl_data_bowl'
+  table: 'nfl_data'
   user: 'postgres'
   drv: 'PostgreSQL'
   host: 'localhost'
-  # Set how many rows are required (int or 'all')
-  rows: 100
+  # Set how many rows are required (int between 1-512 or 'all')
+  n_games: 100
+  
+preprocessing:
+  test_train_split: 0.5
+  
