@@ -9,7 +9,7 @@ loading:
   drv: 'PostgreSQL'
   host: 'localhost'
   # Set how many rows are required (int between 1-512 or 'all')
-  n_games: 100
+  n_games: 'all'
   
 preprocessing:
   test_train_split: 0.5
