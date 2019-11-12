@@ -1,4 +1,4 @@
-########################################### NFL Data Bowl Script #############################################
+########################### NFL Data Bowl Script #############################################
 
 # Set Up  -------------------------------------------------------------
 
@@ -9,9 +9,14 @@ library(getPass)
 library(lubridate)
 library(glue)
 library(yaml)
+library(here)
+library(drake)
+library(testthat)
+library(travis)
+library(janitor)
 
 # Load in config file
-config <- read_yaml("src/config.yaml")
+config <- read_yaml(glue("{here::here()}/src/config.yaml"))
 
 # Set up connection to postgres 
 drv <- dbDriver('PostgreSQL')
@@ -24,9 +29,9 @@ conn <- dbConnect(drv,
 # Load data into memory
 nfl_play_raw <- dbGetQuery(conn, "select * from nfl_data")
 
-# Build Feature Vector ----------------------------------------------------
+# Preprocessing ----------------------------------------------------
 
-# BTransform first features
+# Transform first features
 nfl_data <- nfl_play_raw %>% 
   transmute(
     gameid, 
@@ -179,7 +184,8 @@ nfl_data <- nfl_play_raw %>%
       playercollegename =='Western Kentucky'  ~  'Conference USA',
       playercollegename =='Western Michigan'  ~  'Mid-American Conference',
       playercollegename =='Wisconsin'  ~  'Big 10 Conference',
-      playercollegename =='Wyoming'  ~  'Mountain West Conference'),
+      playercollegename =='Wyoming'  ~  'Mountain West Conference',
+      TRUE ~ as.character('Other')),
     orientation_position = as.numeric(orientation),
     dir_position = as.numeric(dir),
     defendersinthebox = as.numeric(defendersinthebox),
@@ -213,8 +219,7 @@ nfl_data <- nfl_play_raw %>%
     possession_team = case_when(
       position %in% c('SK','RB','OL') ~ 'Offence',
       position %in% c('DB','LB','DL') ~ 'Defence'),
-    home_field = case_when(
-      possession_team == 'Offence' & team =='home' ~ 1),
+    home_field = if_else(possession_team == 'Offence' & team =='home', 1, 0),
     formation = case_when(
       offenseformation =='ACE' ~ 1,
       offenseformation =='EMPTY' ~ 23,
@@ -228,40 +233,88 @@ nfl_data <- nfl_play_raw %>%
     playerheight = (as.numeric(str_sub(playerheight,1,1))*30.5) + (as.numeric(substr(playerheight, 3, length(playerheight))) * 2.5),
     yards)
 
-# %>% 
-#   group_by(gameid, playid) %>% 
-#   summarise(avg_age = mean(age_at_game),
-#     time_remaining = min(time_remaining),
-#     yards_per_play_for_first_down = min(yards_per_play_for_first_down),
-#     x_position = mean(x_position),
-#     y_position = mean(y_position),
-#     s_position = mean(s_position),
-#     a_position = mean(a_position),
-#     dis_position = mean(dis_position),
-#     orientation_position = mean(orientation_position),
-#     dir_position = mean(dir_position),
-#     defendersinthebox = min(defendersinthebox),
-#     playerweight = mean(playerweight),
-#     playerheight = mean(playerheight),
-#     yards = min(yards))
-# 
+# Build feature vectors ---------------------------------------------------
+
+# Build specific play level features
+play_features <- nfl_data %>% 
+  distinct(playid, time_remaining, defendersinthebox, yards, yards_per_play_for_first_down, formation) %>%
+  arrange(playid)
+
+# Build college features
+college_features <- crossing(playid = nfl_data$playid,
+                         possession_team = c('Offence','Defence'),
+                         college_conference = unique(nfl_data$college_conference)) %>% 
+                left_join(nfl_data %>% 
+                group_by(playid, possession_team) %>% count(college_conference),
+                         by = c('playid' = 'playid', 'possession_team' = 'possession_team', 'college_conference' = 'college_conference')) %>% 
+                mutate(n = if_else(is.na(n),as.integer(0), n)) %>%
+                unite("players_by_conference", c('possession_team','college_conference'), sep = ' - ') %>% 
+                spread(players_by_conference, n) %>% 
+                arrange(playid)
+          
+# Build team features
+team_features <- nfl_data %>% 
+  group_by(gameid, playid, possession_team) %>% 
+  summarise(mean_x = mean(x_position),
+            mean_y = mean(y_position),
+            mean_a = mean(a_position),
+            mean_dis = mean(dis_position, na.rm=T),
+            mean_orientation = mean(orientation_position, na.rm=T),
+            mean_dir = mean(dir_position, na.rm=T),
+            mean_weight = min(playerweight),
+            mean_height = min(playerheight)) %>% 
+  ungroup() %>% 
+  tidyr::gather(key, value, -gameid, -playid, -possession_team) %>% 
+  unite("features", c("possession_team","key"), sep =' - ') %>% 
+  spread(features, value) %>% 
+  arrange(playid)
+
+# Combine into 1 overall vector for preds
+training_data <- play_features %>% 
+  cbind(college_features) %>% 
+  cbind(team_features)
+
+# Hack to remove duplicate ID cols - TODO, replace this with better approach.
+training_data <- training_data[, -c(5,30, 31)]
+
+
+# To do
+
+# Build yards to TD
+# Build score spread feature
+# Build O/D personal features
+# Stadium
+# Stadium type
+# turf
+# location
+# gameweather
+# temp
+# humidity
+# windspeed
+# winddirection
+
+nfl_play_raw %>% 
+    mutate(stadium = case_when( stadium =='CenturyField' | stadium =='CenturyLink' | stadium =='CenturyLink Field' ~ 'CenturyLink Field',
+           stadium =='Broncos Stadium at Mile High' | stadium =='Broncos Stadium At Mile High' ~ 'Mile High',
+           stadium =='EverBank Field' | stadium =='Everbank Field' ~ 'Everbank Field',
+           stadium =='FirstEnergyStadium' | stadium == 'FirstEnergy Stadium' | stadium =='FirstEnergy' | stadium =='First Energy Stadium' ~ 'First Energy Stadium',
+           stadium =='Lambeau Field' | stadium =='Lambeau field' ~ 'Lambeau Field',
+           stadium =='Los Angeles Memorial Coliesum' | stadium =='Los Angeles Memorial Coliseum' ~ 'LA Coliseum',
+           stadium =='M&T Bank Stadium' | stadium =='M & T Bank Stadium' | stadium =='M&T Stadium' ~ 'M&T Bank Stadium',
+           stadium =='Mercedes-Benz Dome' | stadium =='Mercedes-Benz Stadium' | stadium =='Mercedes-Benz Superdome' ~ 'Mercedes-Benz Superdome',
+           str_detect(str_to_lower(stadium),'metlife') ~ 'Metlife Stadium',
+           str_detect(str_to_lower(stadium),'NRG') ~ 'NRG Stadium',
+           str_detect(str_to_lower(stadium),'Paul Brown') ~ 'Paul Brown',
+           TRUE ~ as.character(stadium))) %>% 
+    group_by(stadium) %>% 
+    summarise(mean_yards = mean(as.numeric(yards)),
+            count = n()) %>% View()
 
 
 
 
+  ggplot(aes(fct_reorder(as.factor(stadium), mean_yards), mean_yards)) + 
+    geom_col() +
+    coord_flip()
 
-
-
-
-
-  
-  
-
-
-
-
-
-
-
-
-
+ggplot(nfl_play_raw, aes(stadium, yards)) + geom
