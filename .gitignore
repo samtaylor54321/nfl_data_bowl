@@ -108,3 +108,4 @@ venv.bak/
 *.out
 *.csv
 .Rproj.user
+*.h5
