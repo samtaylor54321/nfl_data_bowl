@@ -1,1 +1,1 @@
-cat *.psql | psql -h localhost -U postgres;
+cat *.psql | psql postgres;
