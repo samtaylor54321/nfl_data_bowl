@@ -11,9 +11,9 @@ library(glue)
 library(yaml)
 library(here)
 library(drake)
-library(testthat)
-library(travis)
-library(janitor)
+library(usethis)
+#library(travis)
+#library(janitor)
 
 # Load in config file
 config <- read_yaml(glue("{here::here()}/src/config.yaml"))
@@ -22,7 +22,7 @@ config <- read_yaml(glue("{here::here()}/src/config.yaml"))
 drv <- dbDriver('PostgreSQL')
 conn <- dbConnect(drv, 
                   host='localhost',
-                  user='postgres',
+                  user='samtaylor',
                   password=getPass(),
                   dbname='nfl_data_bowl')
 
@@ -216,10 +216,11 @@ nfl_data <- nfl_play_raw %>%
       position ==    'WR'  ~  'SK',
       position ==    'QB'  ~  'SK',
       position ==    'TE'  ~  'SK'),
-    possession_team = case_when(
+    possessionteam,
+    possession = case_when(
       position %in% c('SK','RB','OL') ~ 'Offence',
       position %in% c('DB','LB','DL') ~ 'Defence'),
-    home_field = if_else(possession_team == 'Offence' & team =='home', 1, 0),
+    home_field = if_else(possession == 'Offence' & team =='home', 1, 0),
     formation = case_when(
       offenseformation =='ACE' ~ 1,
       offenseformation =='EMPTY' ~ 23,
@@ -230,6 +231,21 @@ nfl_data <- nfl_play_raw %>%
       offenseformation =='SINGLEBACK' ~ 10247,
       offenseformation =='WILDCAT' ~ 81,
       is.na(offenseformation) ~ 5),
+    stadium = case_when(stadium =='CenturyField' | stadium =='CenturyLink' | stadium =='CenturyLink Field' ~ 'CenturyLink Field',
+                        str_detect(str_to_lower(stadium), 'Mile High') ~ 'Mile High Stadium',
+                        stadium =='EverBank Field' | stadium =='Everbank Field' ~ 'Everbank Field',
+                        stadium =='FirstEnergyStadium' | stadium == 'FirstEnergy Stadium' | stadium =='FirstEnergy' | stadium =='First Energy Stadium' ~ 'First Energy Stadium',
+                        stadium =='Lambeau Field' | stadium =='Lambeau field' ~ 'Lambeau Field',
+                        stadium =='Los Angeles Memorial Coliesum' | stadium =='Los Angeles Memorial Coliseum' ~ 'LA Coliseum',
+                        stadium =='M&T Bank Stadium' | stadium =='M & T Bank Stadium' | stadium =='M&T Stadium' ~ 'M&T Bank Stadium',
+                        stadium =='Mercedes-Benz Dome' | stadium =='Mercedes-Benz Stadium' | stadium =='Mercedes-Benz Superdome' ~ 'Mercedes-Benz Superdome',
+                        str_detect(str_to_lower(stadium),'metlife') ~ 'Metlife Stadium',
+                        stadium == 'NRG' | stadium =='NRG Stadium' ~ 'NRG Stadium',
+                        str_detect(str_to_lower(stadium),'Paul Brown') ~ 'Paul Brown',
+                        stadium =='Twickenham' ~ 'Twickenham Stadium',
+                        str_detect(str_to_lower(stadium),'Oakland-Alameda') ~ 'Oakland Coliseum',
+                        TRUE ~ as.character(stadium)),
+    turf = if_else(str_detect(str_to_lower(turf), 'grass'),'Natural','Artificial'),
     playerheight = (as.numeric(str_sub(playerheight,1,1))*30.5) + (as.numeric(substr(playerheight, 3, length(playerheight))) * 2.5),
     yards)
 
@@ -237,24 +253,24 @@ nfl_data <- nfl_play_raw %>%
 
 # Build specific play level features
 play_features <- nfl_data %>% 
-  distinct(playid, time_remaining, defendersinthebox, yards, yards_per_play_for_first_down, formation) %>%
+  distinct(playid, time_remaining, defendersinthebox, yards, yards_per_play_for_first_down, formation, turf) %>%
   arrange(playid)
 
 # Build college features
 college_features <- crossing(playid = nfl_data$playid,
-                         possession_team = c('Offence','Defence'),
+                         possession = c('Offence','Defence'),
                          college_conference = unique(nfl_data$college_conference)) %>% 
                 left_join(nfl_data %>% 
-                group_by(playid, possession_team) %>% count(college_conference),
-                         by = c('playid' = 'playid', 'possession_team' = 'possession_team', 'college_conference' = 'college_conference')) %>% 
+                group_by(playid, possession) %>% count(college_conference),
+                         by = c('playid' = 'playid', 'possession' = 'possession', 'college_conference' = 'college_conference')) %>% 
                 mutate(n = if_else(is.na(n),as.integer(0), n)) %>%
-                unite("players_by_conference", c('possession_team','college_conference'), sep = ' - ') %>% 
+                unite("players_by_conference", c('possession','college_conference'), sep = ' - ') %>% 
                 spread(players_by_conference, n) %>% 
                 arrange(playid)
           
 # Build team features
 team_features <- nfl_data %>% 
-  group_by(gameid, playid, possession_team) %>% 
+  group_by(gameid, playid, possession) %>% 
   summarise(mean_x = mean(x_position),
             mean_y = mean(y_position),
             mean_a = mean(a_position),
@@ -264,8 +280,8 @@ team_features <- nfl_data %>%
             mean_weight = min(playerweight),
             mean_height = min(playerheight)) %>% 
   ungroup() %>% 
-  tidyr::gather(key, value, -gameid, -playid, -possession_team) %>% 
-  unite("features", c("possession_team","key"), sep =' - ') %>% 
+  tidyr::gather(key, value, -gameid, -playid, -possession) %>% 
+  unite("features", c("possession","key"), sep =' - ') %>% 
   spread(features, value) %>% 
   arrange(playid)
 
@@ -275,8 +291,7 @@ training_data <- play_features %>%
   cbind(team_features)
 
 # Hack to remove duplicate ID cols - TODO, replace this with better approach.
-training_data <- training_data[, -c(5,30, 31)]
-
+training_data <- training_data[, -c(8,33, 34)]
 
 # To do
 
@@ -295,7 +310,7 @@ training_data <- training_data[, -c(5,30, 31)]
 
 nfl_play_raw %>% 
     mutate(stadium = case_when( stadium =='CenturyField' | stadium =='CenturyLink' | stadium =='CenturyLink Field' ~ 'CenturyLink Field',
-           stadium =='Broncos Stadium at Mile High' | stadium =='Broncos Stadium At Mile High' ~ 'Mile High',
+           str_detect(str_to_lower(stadium), 'Mile High') ~ 'Mile High Stadium',
            stadium =='EverBank Field' | stadium =='Everbank Field' ~ 'Everbank Field',
            stadium =='FirstEnergyStadium' | stadium == 'FirstEnergy Stadium' | stadium =='FirstEnergy' | stadium =='First Energy Stadium' ~ 'First Energy Stadium',
            stadium =='Lambeau Field' | stadium =='Lambeau field' ~ 'Lambeau Field',
@@ -303,18 +318,19 @@ nfl_play_raw %>%
            stadium =='M&T Bank Stadium' | stadium =='M & T Bank Stadium' | stadium =='M&T Stadium' ~ 'M&T Bank Stadium',
            stadium =='Mercedes-Benz Dome' | stadium =='Mercedes-Benz Stadium' | stadium =='Mercedes-Benz Superdome' ~ 'Mercedes-Benz Superdome',
            str_detect(str_to_lower(stadium),'metlife') ~ 'Metlife Stadium',
-           str_detect(str_to_lower(stadium),'NRG') ~ 'NRG Stadium',
+           stadium == 'NRG' | stadium =='NRG Stadium' ~ 'NRG Stadium',
            str_detect(str_to_lower(stadium),'Paul Brown') ~ 'Paul Brown',
+           stadium =='Twickenham' ~ 'Twickenham Stadium',
+           str_detect(str_to_lower(stadium),'Oakland-Alameda') ~ 'Oakland Coliseum',
            TRUE ~ as.character(stadium))) %>% 
     group_by(stadium) %>% 
     summarise(mean_yards = mean(as.numeric(yards)),
-            count = n()) %>% View()
+            count = n()) %>% 
+    ggplot(aes(fct_reorder(as.factor(stadium), mean_yards), mean_yards)) + 
+      geom_col() +
+      coord_flip()
 
 
 
 
-  ggplot(aes(fct_reorder(as.factor(stadium), mean_yards), mean_yards)) + 
-    geom_col() +
-    coord_flip()
 
-ggplot(nfl_play_raw, aes(stadium, yards)) + geom
