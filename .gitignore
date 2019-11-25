@@ -110,3 +110,4 @@ venv.bak/
 *.csv
 .Rproj.user
 *.h5
+*.icloud
