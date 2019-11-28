@@ -98,7 +98,16 @@ venv.bak/
 .ropeproject
 
 # mkdocs documentation
+
 /site
 
 # mypy
 .mypy_cache/
+*.DS_Store
+
+# remove any output files
+*.out
+*.csv
+.Rproj.user
+*.h5
+*.icloud

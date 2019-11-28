@@ -1,0 +1,128 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+params:
+  pwd:
+    label: "Please enter password to build connect to Postgres"
+    value: ""
+    input: password
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## EDA of NFL Data Bowl
+
+Summary of Kaggle competition dataset for NFL Data Bowl. Further information is available at 
+https://www.kaggle.com/c/nfl-big-data-bowl-2020 
+
+```{r set_report, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(RPostgreSQL)
+library(ggthemes)
+library(ggimage)
+
+# Set up database connection
+drv <- dbDriver("PostgreSQL")
+conn <- dbConnect(drv, user ='postgres', host='localhost', dbname ='nfl_data_bowl', 
+  password=params$pwd)
+
+# Load data into workspace
+nfl_data_raw <- dbGetQuery(conn, "select * from nfl_data")
+```
+
+```{r data_cleaning, echo=FALSE}
+# make sure that appropriate transformations have taken place. 
+nfl_data <- nfl_data_raw %>% 
+  mutate(yards = as.numeric(yards),
+         x = as.numeric(x),
+         y = as.numeric(y),
+         a = as.numeric(a),
+         dis = as.numeric(dis),
+         s = as.numeric(s))
+```
+
+The dataset contain data from `r n_distinct(nfl_data$gameid)` NFL games which took place between the `r min(nfl_data$season)` and `r max(nfl_data$season)` seasons. Across the entire dataset, the average yardage gained is `r round(mean(nfl_data$yards),1)` per play. The plot below breaks this down between teams. 
+
+```{r avg_rushing_yards, echo=FALSE}
+
+# Get NFL team logos
+file <- list.files("/Users/samtaylor/Documents/Git/nfl_data_bowl/documentation/nfl_logos")
+
+logos <-  list()
+for (logo in 1:length(file)) {
+  logos[logo] <- paste0("/Users/samtaylor/Documents/Git/nfl_data_bowl/documentation/nfl_logos/", file[logo])
+}
+
+# Get avg rushing yards and combine with logos
+team_yards <- nfl_data %>% 
+  group_by(possessionteam) %>% 
+  summarise(avg_ypc = mean(yards)) %>% 
+  mutate(team = fct_reorder(possessionteam, avg_ypc)) %>% 
+  cbind(data.frame(logo = unlist(logos)))
+
+ggplot(team_yards, aes(team, avg_ypc)) +  geom_col(alpha=3/4, color='black') +
+  geom_image(aes(image=logo)) + theme_fivethirtyeight() +
+  theme(axis.title = element_text()) + ylab('Average Yards Per Carry') +
+  scale_x_discrete() + coord_flip() + geom_hline(yintercept = mean(nfl_data$yards), color='red', lty=2) + 
+  xlab('') + ggtitle("Which team has the most yards/play since 2017?")
+
+```
+
+```{r lm_model}
+play_data <- nfl_data %>% 
+  group_by(playid, team) %>% 
+  summarise(mean_speed = mean(s, na.rm = T),
+            mean_acc = mean(a, na.rm = T),
+            mean_dis = mean(dis, na.rm = T),
+            yards = min(yards)) %>% 
+  gather(key, value, -playid, -yards, -team) %>% 
+  unite("key", team, key, sep='_') %>% 
+  spread(key, value) %>% 
+  ungroup()
+
+lm(yards~., data=sample_play_data)
+```
+
+
+```{r}
+ind <- sample(play_data, size =0.5)
+
+```
+
+```{r}
+nfl_data %>% 
+  ggplot(aes(abs(yards))) + geom_histogram(binwidth = 1)
+
+marginal_probs = nfl_data %>% 
+  mutate(yards = round(yards,0)) %>% 
+  count(yards) %>% 
+  mutate(total=sum(n),
+         prob = n/total)
+
+data <- data.frame(yards = c(-99:99)) %>% 
+  left_join(marginal_probs) %>% 
+  complete(prob, fill = list(prob=0)) %>% 
+  arrange(yards) %>% 
+  select(prob, yards)
+  
+samp <- sample(data$yards, 1000000, prob=data$prob, replace=T) 
+
+
+   data.frame(samp) %>% 
+     ggplot(aes(x=samp)) + geom_histogram(binwidth = 1)
+
+
+```
+
+```{r}
+nfl_data %>% 
+  filter(playid =='20170907000118') %>% 
+  ggplot(aes(x,y, color=position)) + geom_point() + xlim(0,120) + ylim(0,53) +
+  geom_vline(xintercept=74)  
+```
+
+
